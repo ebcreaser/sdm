@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 
 #define MAXPW 256
@@ -42,6 +43,7 @@ static struct passwd *
 getpw()
 {
 	struct spwd *sp;
+	struct termios term;
 	char user[256];
 	char passwd[256];
 	char *hash;
@@ -55,6 +57,9 @@ getpw()
 	user[i] = '\0';
 	fputs("Password: ", stdout);
 	i = 0;
+	tcgetattr(STDIN_FILENO, &term);
+	term.c_lflag &= ~ECHO;
+	tcsetattr(STDIN_FILENO, 0, &term);
 	while((c = getchar()) != '\n' && c != EOF && i < MAXPW - 1) {
 		passwd[i++] = c;
 	}
@@ -62,6 +67,8 @@ getpw()
 	if ((sp = getspnam(user)) == NULL) {
 		return NULL;
 	}
+	term.c_lflag |= ECHO;
+	tcsetattr(STDIN_FILENO, 0, &term);
 	hash = crypt(passwd, sp->sp_pwdp);
 	if (strcmp(hash, sp->sp_pwdp)) {
 		fputs("Incorrect\n", stdout);

@@ -84,8 +84,10 @@ main(int argc, char *argv[])
 {
 	struct passwd *pw;
 	char vtarg[4] = "vt";
-	int fd;
-	pid_t pid;
+	char WM[] = "/usr/local/bin/dwm";
+	char DISPLAY[] = ":1";
+	int fd, status;
+	pid_t pid, shpid, Xpid, wmpid;
 
 	if (argc < 2) {
 		goto error;
@@ -106,24 +108,46 @@ main(int argc, char *argv[])
 	if ((fd = getty(argv[1])) < 0) {
 		goto error;
 	}
-	while(!(pw = getpw()));
-	if (!pw) {
-		goto error;
+	while (1) {
+		while(!(pw = getpw()));
+		if (!pw) {
+			goto error;
+		}
+		if ((pid = fork()) > 0) {
+			wait(&status);
+			continue;
+		} else if (pid == 0) {
+			break;
+		} else {
+			goto error;
+		}
 	}
-	if ((pid = fork()) == 0) {
-		execl("/bin/Xorg", "/bin/Xorg", ":1", vtarg, (char *) NULL);
+	setuid(pw->pw_uid);
+	setenv("SHELL", pw->pw_shell, 1);
+	setenv("HOME", pw->pw_dir, 1);
+	setenv("DISPLAY", DISPLAY, 1);
+	chdir(pw->pw_dir);
+	if ((shpid = fork()) == 0) {
+		execl(pw->pw_shell, pw->pw_shell, "--login", (char *) NULL);
 		goto error;
 	} else if (pid < 0) {
 		goto error;
 	}
-	sleep(5);
-	setuid(pw->pw_uid);
-	setenv("SHELL", pw->pw_shell, 1);
-	setenv("HOME", pw->pw_dir, 1);
-	setenv("DISPLAY", ":1", 1);
-	chdir(pw->pw_dir);
-	execl(pw->pw_shell, pw->pw_shell, "--login", "-c", "dwm", (char *) NULL);
+	if ((Xpid = fork()) == 0) {
+		execl("/bin/Xorg", "/bin/Xorg", DISPLAY, vtarg, (char *) NULL);
+		goto error;
+	} else if (pid < 0) {
+		goto error;
+	}
+	if ((wmpid = fork()) == 0) {
+		execl(WM, WM, (char *) NULL);
+		goto error;
+	} else if (pid < 0) {
+		goto error;
+	}
+	wait(&status);
 	exit(EXIT_SUCCESS);
 error:
+	close(fd);
 	exit(EXIT_FAILURE);
 }

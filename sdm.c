@@ -11,9 +11,12 @@
 #include <unistd.h>
 
 #define MAXPW 256
+#define DISPLAY ":1"
+#define WM "/usr/local/bin/dwm"
 
 static int getty(char *path);
 static struct passwd *getpw();
+static int runsession(struct passwd *pw, char vtn);
 
 static int
 getty(char *path)
@@ -79,15 +82,43 @@ getpw()
 	}
 }
 
+static int
+runsession(struct passwd *pw, char vtn) {
+	char vtarg[] = "vt1";
+	int status;
+	pid_t shpid, Xpid;
+
+	vtarg[2] = vtn;
+	setuid(pw->pw_uid);
+	setenv("SHELL", pw->pw_shell, 1);
+	setenv("HOME", pw->pw_dir, 1);
+	setenv("DISPLAY", DISPLAY, 1);
+	chdir(pw->pw_dir);
+	if ((Xpid = fork()) == 0) {
+		execl("/bin/Xorg", "/bin/Xorg", DISPLAY, vtarg, (char *) NULL);
+		return -1;
+	} else if (Xpid < 0) {
+		return -1;
+	}
+	sleep(2);
+	if ((shpid = fork()) == 0) {
+		execl(pw->pw_shell, pw->pw_shell, "--login", "-c", WM, (char *) NULL);
+		return -1;
+	} else if (shpid < 0) {
+		return -1;
+	}
+	wait(&status);
+	kill(shpid, SIGTERM);
+	kill(Xpid, SIGTERM);
+	exit(EXIT_SUCCESS);
+}
+
 int
 main(int argc, char *argv[])
 {
 	struct passwd *pw;
-	char vtarg[4] = "vt";
-	char WM[] = "/usr/local/bin/dwm";
-	char DISPLAY[] = ":1";
 	int fd, status;
-	pid_t pid, shpid, Xpid;
+	pid_t pid;
 
 	if (argc < 2) {
 		goto error;
@@ -95,7 +126,6 @@ main(int argc, char *argv[])
 	if (strstr(argv[1], "/dev/tty") != argv[1] || !isdigit(argv[1][8])) {
 		goto error;
 	}
-	vtarg[2] = argv[1][8];
 	pid = fork();
 	if (pid > 0) {
 		exit(EXIT_SUCCESS);
@@ -113,36 +143,18 @@ main(int argc, char *argv[])
 		if (!pw) {
 			goto error;
 		}
-		if ((pid = fork()) > 0) {
-			waitpid(pid, &status, 0);
-			continue;
-		} else if (pid == 0) {
-			break;
-		} else {
+		if ((pid = fork()) == 0) {
+			runsession(pw, argv[1][8]);
+		} else if (pid < 0) {
 			goto error;
 		}
+		waitpid(pid, &status, 0);
+		sleep(2);
+		continue;
 	}
-	setuid(pw->pw_uid);
-	setenv("SHELL", pw->pw_shell, 1);
-	setenv("HOME", pw->pw_dir, 1);
-	setenv("DISPLAY", DISPLAY, 1);
-	chdir(pw->pw_dir);
-	if ((Xpid = fork()) == 0) {
-		execl("/bin/Xorg", "/bin/Xorg", DISPLAY, vtarg, (char *) NULL);
-		goto error;
-	} else if (pid < 0) {
+	if (runsession(pw, argv[1][8])) {
 		goto error;
 	}
-	sleep(2);
-	if ((shpid = fork()) == 0) {
-		execl(pw->pw_shell, pw->pw_shell, "--login", "-c", WM, (char *) NULL);
-		goto error;
-	} else if (pid < 0) {
-		goto error;
-	}
-	wait(&status);
-	kill(shpid, SIGTERM);
-	kill(Xpid, SIGTERM);
 	exit(EXIT_SUCCESS);
 error:
 	close(fd);

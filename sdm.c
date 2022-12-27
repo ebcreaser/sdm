@@ -7,12 +7,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
-#define MAXPW 256
-#define DISPLAY ":1"
-#define WM "/usr/local/bin/dwm"
+#define SDM_MAXPW 256
+#define SDM_DISPLAY ":1"
+#define SDM_WM "/usr/local/bin/dwm"
 
 static int getty(char *path);
 static struct passwd *getpw();
@@ -54,7 +55,7 @@ getpw()
 
 	fputs("Username: ", stdout);
 	i = 0;
-	while((c = getchar()) != '\n' && c != EOF && i < MAXPW - 1) {
+	while((c = getchar()) != '\n' && c != EOF && i < SDM_MAXPW - 1) {
 		user[i++] = c;
 	}
 	user[i] = '\0';
@@ -63,7 +64,7 @@ getpw()
 	tcgetattr(STDIN_FILENO, &term);
 	term.c_lflag &= ~ECHO;
 	tcsetattr(STDIN_FILENO, 0, &term);
-	while((c = getchar()) != '\n' && c != EOF && i < MAXPW - 1) {
+	while((c = getchar()) != '\n' && c != EOF && i < SDM_MAXPW - 1) {
 		passwd[i++] = c;
 	}
 	passwd[i] = '\0';
@@ -92,17 +93,17 @@ runsession(struct passwd *pw, char vtn) {
 	setuid(pw->pw_uid);
 	setenv("SHELL", pw->pw_shell, 1);
 	setenv("HOME", pw->pw_dir, 1);
-	setenv("DISPLAY", DISPLAY, 1);
+	setenv("DISPLAY", SDM_DISPLAY, 1);
 	chdir(pw->pw_dir);
 	if ((Xpid = fork()) == 0) {
-		execl("/bin/Xorg", "/bin/Xorg", DISPLAY, vtarg, (char *) NULL);
+		execl("/bin/Xorg", "/bin/Xorg", SDM_DISPLAY, vtarg, (char *) NULL);
 		return -1;
 	} else if (Xpid < 0) {
 		return -1;
 	}
 	sleep(2);
 	if ((shpid = fork()) == 0) {
-		execl(pw->pw_shell, pw->pw_shell, "--login", "-c", WM, (char *) NULL);
+		execl(pw->pw_shell, pw->pw_shell, "--login", "-c", SDM_WM, (char *) NULL);
 		return -1;
 	} else if (shpid < 0) {
 		return -1;
@@ -150,12 +151,12 @@ main(int argc, char *argv[])
 		}
 		waitpid(pid, &status, 0);
 		sleep(2);
+		system("/bin/clear");
 		continue;
 	}
 	if (runsession(pw, argv[1][8])) {
 		goto error;
 	}
-	exit(EXIT_SUCCESS);
 error:
 	close(fd);
 	exit(EXIT_FAILURE);

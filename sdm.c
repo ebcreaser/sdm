@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
-#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -19,14 +18,13 @@ static int getty(char *path);
 static struct passwd *getpw();
 static int runsession(struct passwd *pw, char vtn);
 
+/* open tty device at path and set stdin, stdout, and stderr
+ */
 static int
 getty(char *path)
 {
 	int fd;
 
-	if ((fd = open(path, O_RDWR)) < 0) {
-		return -1;
-	}
 	if ((fd = open(path, O_RDWR)) < 0) {
 		return -1;
 	}
@@ -43,13 +41,15 @@ getty(char *path)
 	return fd;
 }
 
+/* prompt user for username and password, and authenticate against shadow file
+ */
 static struct passwd *
 getpw()
 {
 	struct spwd *sp;
 	struct termios term;
-	char user[256];
-	char passwd[256];
+	char user[SDM_MAXPW];
+	char passwd[SDM_MAXPW];
 	char *hash;
 	int c, i;
 
@@ -61,6 +61,7 @@ getpw()
 	user[i] = '\0';
 	fputs("Password: ", stdout);
 	i = 0;
+	/* disable input echo */
 	tcgetattr(STDIN_FILENO, &term);
 	term.c_lflag &= ~ECHO;
 	tcsetattr(STDIN_FILENO, 0, &term);
@@ -71,8 +72,10 @@ getpw()
 	if ((sp = getspnam(user)) == NULL) {
 		return NULL;
 	}
+	/* reenable input echo */
 	term.c_lflag |= ECHO;
 	tcsetattr(STDIN_FILENO, 0, &term);
+	/* hash inputed password and compare against shadow file entry */
 	hash = crypt(passwd, sp->sp_pwdp);
 	if (strcmp(hash, sp->sp_pwdp)) {
 		fputs("Incorrect\n", stdout);
@@ -83,6 +86,8 @@ getpw()
 	}
 }
 
+/* set env variables and run X
+ */
 static int
 runsession(struct passwd *pw, char vtn) {
 	char vtarg[] = "vt1";

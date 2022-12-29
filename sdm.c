@@ -14,9 +14,17 @@
 #define SDM_DISPLAY ":1"
 #define SDM_WM "/usr/local/bin/dwm"
 
+static void clear();
 static int getty(char *path);
+static char *gethash(struct passwd *pw);
 static struct passwd *getpw();
 static int runsession(struct passwd *pw, char vtn);
+
+static void
+clear()
+{
+	system("/bin/clear");
+}
 
 /* open tty device at path and set stdin, stdout, and stderr
  */
@@ -41,18 +49,36 @@ getty(char *path)
 	return fd;
 }
 
+static char *
+gethash(struct passwd *pw)
+{
+	struct spwd *sp;
+	char *hash;
+
+	hash = pw->pw_passwd;
+	if (!strcmp(hash, "x")) {
+		if ((sp = getspnam(pw->pw_name)) == NULL) {
+			return NULL;
+		}
+		hash = sp->sp_pwdp;
+	}
+
+	return hash;
+}
+
 /* prompt user for username and password, and authenticate against shadow file
  */
 static struct passwd *
 getpw()
 {
-	struct spwd *sp;
+	struct passwd *pw;
 	struct termios term;
 	char user[SDM_MAXPW];
 	char passwd[SDM_MAXPW];
-	char *hash;
+	char *hash, *inputhash;
 	int c, i;
 
+	clear();
 	fputs("Username: ", stdout);
 	i = 0;
 	while((c = getchar()) != '\n' && c != EOF && i < SDM_MAXPW - 1) {
@@ -69,20 +95,21 @@ getpw()
 		passwd[i++] = c;
 	}
 	passwd[i] = '\0';
-	if ((sp = getspnam(user)) == NULL) {
-		return NULL;
-	}
 	/* reenable input echo */
 	term.c_lflag |= ECHO;
 	tcsetattr(STDIN_FILENO, 0, &term);
 	/* hash inputed password and compare against shadow file entry */
-	hash = crypt(passwd, sp->sp_pwdp);
-	if (strcmp(hash, sp->sp_pwdp)) {
-		fputs("Incorrect\n", stdout);
+	if ((pw = getpwnam(user)) == NULL) {
+		return NULL;
+	}
+	hash = gethash(pw);
+	inputhash = crypt(passwd, hash);
+	if (strcmp(inputhash, hash)) {
+		fputs("\nIncorrect\n", stdout);
 		return NULL;
 	} else {
-		fputs("Correct\n", stdout);
-		return getpwnam(user);
+		fputs("\nCorrect\n", stdout);
+		return pw;
 	}
 }
 
@@ -156,11 +183,7 @@ main(int argc, char *argv[])
 		}
 		waitpid(pid, &status, 0);
 		sleep(2);
-		system("/bin/clear");
 		continue;
-	}
-	if (runsession(pw, argv[1][8])) {
-		goto error;
 	}
 error:
 	close(fd);

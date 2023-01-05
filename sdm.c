@@ -1,6 +1,7 @@
 #include <crypt.h>
 #include <ctype.h>
 #include <fcntl.h>
+#include <getopt.h>
 #include <pwd.h>
 #include <shadow.h>
 #include <stdio.h>
@@ -18,7 +19,7 @@ static void clear();
 static int getty(char *path);
 static char *gethash(struct passwd *pw);
 static struct passwd *getpw();
-static int runsession(struct passwd *pw, char vtn);
+static int runsession(struct passwd *pw, char *vtarg);
 
 static void
 clear()
@@ -116,12 +117,10 @@ getpw()
 /* set env variables and run X
  */
 static int
-runsession(struct passwd *pw, char vtn) {
-	char vtarg[] = "vt1";
+runsession(struct passwd *pw, char *vtarg) {
 	int status;
-	pid_t shpid, Xpid;
+	pid_t pid, shpid, Xpid;
 
-	vtarg[2] = vtn;
 	setuid(pw->pw_uid);
 	setenv("SHELL", pw->pw_shell, 1);
 	setenv("HOME", pw->pw_dir, 1);
@@ -140,24 +139,40 @@ runsession(struct passwd *pw, char vtn) {
 	} else if (shpid < 0) {
 		return -1;
 	}
-	wait(&status);
-	kill(shpid, SIGTERM);
-	kill(Xpid, SIGTERM);
+	if ((pid = wait(&status)) == Xpid) {
+		kill(shpid, SIGTERM);
+	} else if (pid == shpid) {
+		kill(Xpid, SIGTERM);
+	}
 	exit(EXIT_SUCCESS);
 }
 
 int
 main(int argc, char *argv[])
 {
+	const struct option vtopt = {
+		.name = "vt",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'v'
+	};
+	const char *optstring = "v:";
 	struct passwd *pw;
+	char ttypath[] = "/dev/tty7";
+	char vtarg[] = "vt7";
 	int fd, status;
 	pid_t pid;
 
-	if (argc < 2) {
-		goto error;
-	}
-	if (strstr(argv[1], "/dev/tty") != argv[1] || !isdigit(argv[1][8])) {
-		goto error;
+	switch (getopt_long(argc, argv, optstring, &vtopt, NULL)) {
+		case 'v':
+			if (isdigit(*optarg)) {
+				ttypath[8] = *optarg;
+				vtarg[2] = *optarg;
+				break;
+			}
+		default:
+			printf("Usage: %s --vt|-v [TTY NUMBER]\n", argv[0]);
+			goto error;
 	}
 	pid = fork();
 	if (pid > 0) {
@@ -168,7 +183,7 @@ main(int argc, char *argv[])
 	if (setsid() < 0) {
 		goto error;
 	}
-	if ((fd = getty(argv[1])) < 0) {
+	if ((fd = getty(ttypath)) < 0) {
 		goto error;
 	}
 	while (1) {
@@ -177,7 +192,7 @@ main(int argc, char *argv[])
 			goto error;
 		}
 		if ((pid = fork()) == 0) {
-			runsession(pw, argv[1][8]);
+			runsession(pw, vtarg);
 		} else if (pid < 0) {
 			goto error;
 		}

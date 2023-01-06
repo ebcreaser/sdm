@@ -2,6 +2,7 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <grp.h>
 #include <pwd.h>
 #include <shadow.h>
 #include <stdio.h>
@@ -12,8 +13,6 @@
 #include <unistd.h>
 
 #define SDM_MAXPW 256
-#define SDM_DISPLAY ":1"
-#define SDM_WM "/usr/local/bin/dwm"
 
 static void clear();
 static int getty(char *path);
@@ -118,32 +117,20 @@ getpw()
  */
 static int
 runsession(struct passwd *pw, char *vtarg) {
-	int status;
-	pid_t pid, shpid, Xpid;
+	pid_t pid;
 
 	setuid(pw->pw_uid);
-	setenv("SHELL", pw->pw_shell, 1);
-	setenv("HOME", pw->pw_dir, 1);
-	setenv("DISPLAY", SDM_DISPLAY, 1);
+	initgroups(pw->pw_name, pw->pw_gid);
 	chdir(pw->pw_dir);
-	if ((Xpid = fork()) == 0) {
-		execl("/bin/Xorg", "/bin/Xorg", SDM_DISPLAY, vtarg, (char *) NULL);
+	setenv("HOME", pw->pw_dir, 1);
+	setenv("SHELL", pw->pw_shell, 1);
+	if ((pid = fork()) == 0) {
+		execl(pw->pw_shell, pw->pw_shell, "--login", "-c", "/usr/bin/startx", (char *) NULL);
 		return -1;
-	} else if (Xpid < 0) {
-		return -1;
-	}
-	sleep(2);
-	if ((shpid = fork()) == 0) {
-		execl(pw->pw_shell, pw->pw_shell, "--login", "-c", SDM_WM, (char *) NULL);
-		return -1;
-	} else if (shpid < 0) {
+	} else if (pid < 0) {
 		return -1;
 	}
-	if ((pid = wait(&status)) == Xpid) {
-		kill(shpid, SIGTERM);
-	} else if (pid == shpid) {
-		kill(Xpid, SIGTERM);
-	}
+	wait(NULL);
 	exit(EXIT_SUCCESS);
 }
 
@@ -180,7 +167,7 @@ main(int argc, char *argv[])
 	} else if (pid < 0) {
 		goto error;
 	}
-	if (setsid() < 0) {
+	if (setsid() < 0 || setgid(5) < 0) {
 		goto error;
 	}
 	if ((fd = getty(ttypath)) < 0) {
@@ -191,12 +178,15 @@ main(int argc, char *argv[])
 		if (!pw) {
 			goto error;
 		}
+		chown(ttypath, pw->pw_uid, pw->pw_gid);
 		if ((pid = fork()) == 0) {
 			runsession(pw, vtarg);
 		} else if (pid < 0) {
+			chown(ttypath, 0, 5);
 			goto error;
 		}
 		waitpid(pid, &status, 0);
+		chown(ttypath, 0, 5);
 		sleep(2);
 		continue;
 	}

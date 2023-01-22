@@ -1,5 +1,6 @@
 #include <crypt.h>
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <grp.h>
@@ -154,6 +155,7 @@ main(int argc, char *argv[])
 
 	if (handleargs(argc, argv) < 0) {
 		printf("Usage: %s --vt|-v [TTY NUMBER]\n", argv[0]);
+		exit(EXIT_FAILURE);
 	}
 	if ((pid = fork()) > 0) {
 		exit(EXIT_SUCCESS);
@@ -177,5 +179,6 @@ main(int argc, char *argv[])
 	}
 error:
 	close(fd);
+	fprintf(stderr, "sdm: error: %s", strerror(errno));
 	exit(EXIT_FAILURE);
 }
